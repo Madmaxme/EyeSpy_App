@@ -15,16 +15,49 @@ import { base64ToUri, formatTimestamp } from '../utils/imageUtils';
 import { useFocusEffect } from '@react-navigation/native';
 
 const FaceItem = ({ item, onPress }) => {
+  // Check if processing is complete
+  const isProcessing = item.processing_status !== 'processed' && item.processing_status !== 'complete';
+  
+  // Get status color based on processing stage
+  const getStatusColor = () => {
+    switch(item.processing_status) {
+      case 'uploading': return '#FF9800'; // Orange
+      case 'searching': return '#03A9F4'; // Light blue
+      case 'generating': return '#4CAF50'; // Green
+      case 'checking': return '#9C27B0'; // Purple
+      case 'processed':
+      case 'complete': return '#4CAF50'; // Green
+      default: return '#BBBBBB'; // Gray for unknown status
+    }
+  };
+  
+  // Get status message for display
+  const getStatusMessage = () => {
+    switch(item.processing_status) {
+      case 'uploading': return 'Uploading & Analyzing';
+      case 'searching': return 'Searching for matches';
+      case 'generating': return 'Generating profile';
+      case 'checking': return 'Checking records';
+      case 'processed':
+      case 'complete': return 'Complete';
+      default: return 'Processing';
+    }
+  };
+  
   return (
     <TouchableOpacity 
-      style={styles.faceItem} 
-      onPress={() => onPress(item)}
+      style={[styles.faceItem, isProcessing && styles.processingItem]} 
+      onPress={() => !isProcessing && onPress(item)}
+      disabled={isProcessing}
     >
       <View style={styles.faceContainer}>
         <Image
-          style={styles.faceThumbnail}
+          style={[styles.faceThumbnail, isProcessing && styles.processingImage]}
           source={{ uri: base64ToUri(item.thumbnail_base64) }}
           resizeMode="cover"
+        />
+        <View 
+          style={[styles.statusIndicator, { backgroundColor: getStatusColor() }]} 
         />
       </View>
       <View style={styles.faceInfo}>
@@ -32,6 +65,12 @@ const FaceItem = ({ item, onPress }) => {
         <Text style={styles.faceTimestamp}>
           {formatTimestamp(item.upload_timestamp)}
         </Text>
+        {isProcessing && (
+          <View style={styles.processingStatus}>
+            <ActivityIndicator size="small" color={getStatusColor()} style={styles.processingSpinner} />
+            <Text style={[styles.processingText, {color: getStatusColor()}]}>{getStatusMessage()}</Text>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -170,6 +209,10 @@ const styles = StyleSheet.create({
     shadowRadius: 1.5,
     elevation: 2,
   },
+  processingItem: {
+    opacity: 0.9,
+    backgroundColor: '#FAFAFA',
+  },
   faceContainer: {
     position: 'relative',
   },
@@ -178,6 +221,9 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 4,
     backgroundColor: '#E0E0E0',
+  },
+  processingImage: {
+    opacity: 0.8,
   },
   statusIndicator: {
     position: 'absolute',
@@ -193,6 +239,18 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 12,
     justifyContent: 'center',
+  },
+  processingStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  processingSpinner: {
+    marginRight: 6,
+  },
+  processingText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   faceId: {
     fontSize: 16,
