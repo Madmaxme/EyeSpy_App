@@ -115,9 +115,50 @@ const DetailScreen = ({ route, navigation }) => {
     );
   }
 
+  // Helper function to render the processing status banner
+  const renderProcessingStatus = () => {
+    if (!faceData.processing_details || faceData.processing_details.complete) {
+      return null; // Don't show anything if processing is complete
+    }
+    
+    // Get stage-specific color and icon
+    let statusColor = '#2196F3'; // Default blue
+    let statusIcon = '🔄';
+    
+    switch (faceData.processing_details.stage) {
+      case 'uploading':
+        statusColor = '#FF9800'; // Orange
+        statusIcon = '📤';
+        break;
+      case 'searching':
+        statusColor = '#03A9F4'; // Light blue
+        statusIcon = '🔍';
+        break;
+      case 'generating':
+        statusColor = '#4CAF50'; // Green
+        statusIcon = '📝';
+        break;
+      case 'checking':
+        statusColor = '#9C27B0'; // Purple
+        statusIcon = '✅';
+        break;
+      default:
+        break;
+    }
+    
+    return (
+      <View style={[styles.processingBanner, { backgroundColor: statusColor }]}>
+        <Text style={styles.processingIcon}>{statusIcon}</Text>
+        <Text style={styles.processingText}>{faceData.processing_details.message}</Text>
+        <ActivityIndicator size="small" color="#FFFFFF" style={styles.processingSpinner} />
+      </View>
+    );
+  };
+
   return (
     <ScrollView style={styles.container}>
-      {/* Processing banner removed */}
+      {/* Processing status banner */}
+      {renderProcessingStatus()}
 
       {/* Original face image */}
       <View style={styles.imageSection}>
@@ -241,16 +282,26 @@ const styles = StyleSheet.create({
   },
   processingBanner: {
     backgroundColor: '#2196F3',
-    padding: 10,
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 10,
+    borderRadius: 4,
+  },
+  processingIcon: {
+    fontSize: 20,
+    marginRight: 5,
   },
   processingText: {
     color: 'white',
-    marginLeft: 10,
+    marginLeft: 5,
     fontSize: 14,
     fontWeight: '500',
+    flex: 1,
+  },
+  processingSpinner: {
+    marginLeft: 10,
   },
   imageSection: {
     padding: 15,

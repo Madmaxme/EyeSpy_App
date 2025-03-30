@@ -2,7 +2,8 @@ import axios from 'axios';
 
 // Define the base URL for the EyeSpy API
 // Replace with your actual server URL when deploying
-const API_BASE_URL = 'http://15.236.226.31:8080/api';
+const API_BASE_URL = 'http://127.0.0.1:8080/api';  //localhost - 'http://127.0.0.1:8080/api'; 
+//production - 'http://15.236.226.31:8080/api'
 
 // Create an axios instance with default config
 const api = axios.create({
@@ -30,15 +31,21 @@ export const getFaceResults = async (faceId) => {
     const response = await api.get(`/results/${faceId}`);
     const data = response.data;
     
-    // Always set processing as complete regardless of actual status
-    data.processing_details = {
-      complete: true,
-      completion_time: data.face_info?.upload_timestamp || new Date().toISOString()
-    };
+    // Use the actual processing status from the server
+    // Only provide defaults if the server didn't send processing details
+    if (!data.processing_details) {
+      console.log('No processing details from server, using defaults');
+      data.processing_details = {
+        stage: 'complete',
+        message: 'Processing complete',
+        complete: true,
+        completion_time: data.face_info?.upload_timestamp || new Date().toISOString()
+      };
+    }
     
-    // Always mark face_info processing as complete too
-    if (data.face_info) {
-      data.face_info.processing_status = 'complete';
+    // Ensure face_info has a processing status
+    if (data.face_info && !data.face_info.processing_status) {
+      data.face_info.processing_status = data.processing_details.stage || 'complete';
     }
     
     // Ensure other required properties exist
