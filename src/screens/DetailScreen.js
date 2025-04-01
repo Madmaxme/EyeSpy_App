@@ -169,7 +169,7 @@ const DetailScreen = ({ route, navigation }) => {
         />
         <View style={styles.faceMetadata}>
           <Text style={styles.faceName}>
-            {faceData.profile?.full_name || 'Processing...'}
+            {faceData.profile?.full_name || 'Unknown Person'}
           </Text>
           <Text style={styles.faceTimestamp}>
             Uploaded: {formatTimestamp(faceData.face_info.upload_timestamp)}
