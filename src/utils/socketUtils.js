@@ -3,8 +3,8 @@ import io from 'socket.io-client';
 // Define the WebSocket URL directly
 // Using the same base URL as the API but without the /api suffix
 // For React Native, we need to use a fixed IP address since window.location isn't available
-const SOCKET_URL = 'http://127.0.0.1:8080';  // localhost/Docker container
-// const SOCKET_URL = 'http://15.236.226.31:8080';  // production
+const SOCKET_URL = 'http://35.180.226.30:8080';  
+// const SOCKET_URL = 'http://35.180.226.30:8080';  // production
 
 console.log('WebSocket connection URL:', SOCKET_URL);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -7,29 +7,18 @@ import {
   TouchableOpacity, 
   Alert,
   ActivityIndicator,
-  Linking,
-  FlatList
+  Linking
 } from 'react-native';
 import { Image } from 'react-native';
 import { getFaceResults, deleteFace } from '../api/eyespyAPI';
 import { base64ToUri, formatTimestamp } from '../utils/imageUtils';
 import { formatBioText } from '../utils/textUtils';
-import { 
-  initializeSocket, 
-  subscribeToFaceUpdates, 
-  subscribeToFaceLogs,
-  unsubscribeFromFaceUpdates
-} from '../utils/socketUtils';
 
 const DetailScreen = ({ route, navigation }) => {
   const { faceId } = route.params;
   const [faceData, setFaceData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [currentLog, setCurrentLog] = useState(null);
-  const [socketConnected, setSocketConnected] = useState(false);
-  const [realtimeStatus, setRealtimeStatus] = useState(null);
-  const logsListRef = useRef(null);
 
   // Function to load the face details
   const loadFaceDetails = async () => {
@@ -49,93 +38,6 @@ const DetailScreen = ({ route, navigation }) => {
   // Load face details when component mounts
   useEffect(() => {
     loadFaceDetails();
-    
-    // Initialize socket connection for real-time updates
-    const socket = initializeSocket();
-    setSocketConnected(socket.connected);
-    
-    // Set up socket event listeners
-    socket.on('connect', () => {
-      console.log('Socket connected in DetailScreen');
-      setSocketConnected(true);
-      
-      // CRITICAL FIX: Explicitly join the face room whenever socket connects
-      socket.emit('join', { face_id: faceId });
-      console.log(`EXPLICITLY joined room for face: ${faceId} after connect`);
-    });
-    
-    socket.on('disconnect', () => {
-      console.log('Socket disconnected in DetailScreen');
-      setSocketConnected(false);
-    });
-    
-    // Subscribe to real-time updates for this specific face
-    subscribeToFaceUpdates(faceId, (data) => {
-      console.log('Received face update:', data);
-      setRealtimeStatus({
-        status: data.status,
-        message: data.message,
-        timestamp: data.timestamp
-      });
-      
-      // Update the current status with special highlighting for OpenAI LLM usage
-      const isNameExtraction = data.message && (
-        data.message.includes('OpenAI') || 
-        data.message.includes('LLM') || 
-        data.message.includes('extract') || 
-        data.message.includes('name')
-      );
-      
-      setCurrentLog({
-        id: `status-${Date.now()}-${Math.random()}`,
-        type: isNameExtraction ? 'llm-extraction' : 'status',
-        status: data.status,
-        message: data.message,
-        timestamp: data.timestamp
-      });
-    });
-    
-    // ADDITIONAL FIX: Add direct listeners for all log events to debug issues
-    socket.on('processing_log', (data) => {
-      console.log(`DIRECT LISTENER received processing_log:`, data);
-    });
-    
-    socket.on('global_processing_log', (data) => {
-      console.log(`DIRECT LISTENER received global_processing_log:`, data);
-    });
-    
-    // Subscribe to processing logs for this face
-    subscribeToFaceLogs(faceId, (data) => {
-      console.log('Received face log via subscription:', data);
-      
-      // Use the log type from the server (like 'info', 'warning', 'error', 'success', 'step')
-      // This is especially important for displaying OpenAI LLM-based name extraction logs
-      const logType = data.type || 'info';
-      
-      // Update the current status log
-      setCurrentLog({
-        id: `log-${Date.now()}-${Math.random()}`,
-        type: logType,
-        message: data.message,
-        timestamp: data.timestamp
-      });
-      
-      // Log for debugging
-      console.log(`Updated status: ${data.message} (type: ${logType})`);
-      
-      // FOR CRITICAL LLM LOGS: Also update the main status message for visibility
-      if (logType === 'llm-extraction' || data.message.includes('OpenAI') || data.message.includes('LLM')) {
-        setRealtimeStatus(prev => ({
-          ...prev,
-          message: `OpenAI Processing: ${data.message}`,
-        }));
-      }
-    });
-    
-    // Clean up on unmount
-    return () => {
-      unsubscribeFromFaceUpdates(faceId);
-    };
   }, [faceId]);
 
   // Function to handle deleting a face
@@ -210,163 +112,11 @@ const DetailScreen = ({ route, navigation }) => {
     );
   }
 
-  // Helper function to render the processing status banner
-  const renderProcessingStatus = () => {
-    // If we have real-time status, show that instead of database status
-    if (realtimeStatus && (!faceData?.processing_details?.complete)) {
-      // Get stage-specific color and icon for real-time status
-      let statusColor = '#2196F3'; // Default blue
-      let statusIcon = '🔄';
-      
-      switch (realtimeStatus.status) {
-        case 'uploading':
-          statusColor = '#FF9800'; // Orange
-          statusIcon = '📤';
-          break;
-        case 'analyzing':
-          statusColor = '#FF9800'; // Orange
-          statusIcon = '🔍';
-          break;
-        case 'searching':
-          statusColor = '#03A9F4'; // Light blue
-          statusIcon = '🔍';
-          break;
-        case 'generating':
-          statusColor = '#4CAF50'; // Green
-          statusIcon = '📝';
-          break;
-        case 'checking':
-          statusColor = '#9C27B0'; // Purple
-          statusIcon = '✅';
-          break;
-        case 'complete':
-          return null; // Don't show banner for completed faces
-        case 'failed':
-          statusColor = '#F44336'; // Red
-          statusIcon = '❌';
-          break;
-        default:
-          break;
-      }
-      
-      return (
-        <View style={[styles.processingBanner, { backgroundColor: statusColor }]}>
-          <Text style={styles.processingIcon}>{statusIcon}</Text>
-          <Text style={styles.processingText}>{realtimeStatus.message}</Text>
-          {realtimeStatus.status !== 'failed' && (
-            <ActivityIndicator size="small" color="#FFFFFF" style={styles.processingSpinner} />
-          )}
-        </View>
-      );
-    }
-    
-    // Fall back to database status if no real-time status
-    if (!faceData?.processing_details || faceData.processing_details.complete) {
-      return null; // Don't show anything if processing is complete
-    }
-    
-    // Get stage-specific color and icon
-    let statusColor = '#2196F3'; // Default blue
-    let statusIcon = '🔄';
-    
-    switch (faceData.processing_details.stage) {
-      case 'uploading':
-        statusColor = '#FF9800'; // Orange
-        statusIcon = '📤';
-        break;
-      case 'searching':
-        statusColor = '#03A9F4'; // Light blue
-        statusIcon = '🔍';
-        break;
-      case 'generating':
-        statusColor = '#4CAF50'; // Green
-        statusIcon = '📝';
-        break;
-      case 'checking':
-        statusColor = '#9C27B0'; // Purple
-        statusIcon = '✅';
-        break;
-      default:
-        break;
-    }
-    
-    return (
-      <View style={[styles.processingBanner, { backgroundColor: statusColor }]}>
-        <Text style={styles.processingIcon}>{statusIcon}</Text>
-        <Text style={styles.processingText}>{faceData.processing_details.message}</Text>
-        <ActivityIndicator size="small" color="#FFFFFF" style={styles.processingSpinner} />
-      </View>
-    );
-  };
-  
-  // Helper function to get log icon based on type
-  const getLogIcon = (type, status) => {
-    if (type === 'status') {
-      // For status updates, use status-specific icons
-      switch (status) {
-        case 'uploading': return '📤';
-        case 'analyzing': return '🔍';
-        case 'searching': return '🔎';
-        case 'checking': return '📋';
-        case 'generating': return '📝';
-        case 'complete': return '✅';
-        case 'failed': return '❌';
-        default: return '🔄';
-      }
-    } else if (type === 'llm-extraction') {
-      // Special icon for OpenAI LLM name extraction
-      return '🤖'; // Robot face emoji for AI processing
-    } else {
-      // For regular logs, use type-specific icons
-      switch (type) {
-        case 'info': return 'ℹ️';
-        case 'warning': return '⚠️';
-        case 'error': return '❌';
-        case 'success': return '✅';
-        case 'step': return '➡️';
-        default: return '📋';
-      }
-    }
-  };
-  
-  // Helper function to get log style based on type
-  const getLogStyle = (type) => {
-    switch (type) {
-      case 'status': return styles.statusLogItem;
-      case 'info': return styles.infoLogItem;
-      case 'warning': return styles.warningLogItem;
-      case 'error': return styles.errorLogItem;
-      case 'success': return styles.successLogItem;
-      case 'step': return styles.stepLogItem;
-      case 'llm-extraction': return styles.llmExtractionLogItem; // Special style for LLM extraction
-      default: return styles.detailLogItem;
-    }
-  };
-  
-  // Helper function to render the current processing status
-  const renderCurrentStatus = () => {
-    if (!currentLog) {
-      return (
-        <View style={styles.statusSection}>
-          <Text style={styles.emptyStatusText}>Waiting for processing to begin...</Text>
-        </View>
-      );
-    }
-    
-    return (
-      <View style={styles.statusSection}>
-        <View style={[styles.statusItem, getLogStyle(currentLog.type)]}>
-          <Text style={styles.logIcon}>{getLogIcon(currentLog.type, currentLog.status)}</Text>
-          <Text style={styles.statusMessage}>{currentLog.message}</Text>
-        </View>
-      </View>
-    );
-  };
+
 
   return (
     <ScrollView style={styles.container}>
-      {/* Processing status banner */}
-      {renderProcessingStatus()}
+
 
       {/* Original face image */}
       <View style={styles.imageSection}>
@@ -438,8 +188,7 @@ const DetailScreen = ({ route, navigation }) => {
         )}
       </View>
 
-      {/* Real-time status */}
-      {renderCurrentStatus()}
+
 
       {/* Delete button */}
       <TouchableOpacity 
@@ -491,29 +240,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
   },
-  processingBanner: {
-    backgroundColor: '#000000',
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-    borderRadius: 4,
-  },
-  processingIcon: {
-    fontSize: 20,
-    marginRight: 5,
-  },
-  processingText: {
-    color: 'white',
-    marginLeft: 5,
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
-  processingSpinner: {
-    marginLeft: 10,
-  },
+
   imageSection: {
     padding: 15,
     backgroundColor: 'white',
@@ -668,49 +395,7 @@ const styles = StyleSheet.create({
   logContent: {
     flex: 1,
   },
-  logTimestamp: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 2,
-  },
-  logMessage: {
-    fontSize: 14,
-    color: '#333',
-  },
-  // Log type specific styles
-  statusLogItem: {
-    backgroundColor: '#E3F2FD',
-  },
-  infoLogItem: {
-    backgroundColor: '#F5F5F5',
-  },
-  warningLogItem: {
-    backgroundColor: '#FFF3E0',
-  },
-  errorLogItem: {
-    backgroundColor: '#FFEBEE',
-  },
-  successLogItem: {
-    backgroundColor: '#E8F5E9',
-  },
-  stepLogItem: {
-    backgroundColor: '#F5F5F5',
-    borderLeftWidth: 3,
-    borderLeftColor: '#2196F3',
-  },
-  // Special style for OpenAI LLM extraction logs
-  llmExtractionLogItem: {
-    backgroundColor: '#E1F5FE', // Light blue background
-    borderRadius: 6,
-    borderLeftWidth: 3,
-    borderLeftColor: '#0288D1', // Darker blue border
-  },
-  emptyStatusText: {
-    fontSize: 14,
-    color: '#757575',
-    textAlign: 'center',
-    padding: 20,
-  },
+
 });
 
 export default DetailScreen;
