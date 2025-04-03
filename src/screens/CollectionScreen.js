@@ -8,17 +8,64 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-  Animated
+  Animated,
+  ScrollView
 } from 'react-native';
 import { Image } from 'react-native';
 import { getFaces, deleteFace } from '../api/eyespyAPI';
 import { base64ToUri, formatTimestamp } from '../utils/imageUtils';
 import { useFocusEffect } from '@react-navigation/native';
 import { Swipeable } from 'react-native-gesture-handler';
+import { 
+  initializeSocket, 
+  subscribeToProcessingUpdates, 
+  unsubscribeFromUpdates,
+  subscribeToFaceLogs,
+  getSocket,
+  joinFaceRoom
+} from '../utils/socketUtils';
 
 const FaceItem = ({ item, onPress, onDelete }) => {
   const [deleting, setDeleting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+  // Removed expanded state - we no longer show logs
+  // Removed processingLogs state - we no longer need to store logs
   const swipeableRef = useRef(null);
+  
+  // Explicitly log the item status to help with debugging
+  useEffect(() => {
+    console.log(`FaceItem ${item.face_id} status: ${item.processing_status}, message: ${item.realtimeMessage || 'none'}`);
+  }, [item.processing_status, item.realtimeMessage]);
+  
+  // Subscribe to real-time status updates only
+  useEffect(() => {
+    if (isProcessing || isFailed) {
+      console.log(`Setting up status listeners for face ${item.face_id}`);
+      
+      // Create direct listeners for status updates
+      const socket = getSocket();
+      
+      // Explicitly join the face room
+      socket.emit('join', { face_id: item.face_id });
+      console.log(`Joined room for face: ${item.face_id}`);
+      
+      // Listen for processing updates to update status
+      socket.on('processing_update', (data) => {
+        if (data.face_id === item.face_id) {
+          // Update status message
+          setStatusMessage(data.message);
+          console.log(`Updated status for ${item.face_id}:`, data.message);
+        }
+      });
+
+      // Clean up subscription on unmount
+      return () => {
+        socket.off('processing_update');
+        console.log(`Cleaned up listeners for face: ${item.face_id}`);
+      };
+    }
+  }, [item.face_id, isProcessing, isFailed]);
+  
   // Check if processing is complete
   const isProcessing = item.processing_status !== 'processed' && item.processing_status !== 'complete' && item.processing_status !== 'failed';
   // Check if item failed
@@ -40,8 +87,15 @@ const FaceItem = ({ item, onPress, onDelete }) => {
   
   // Get status message for display
   const getStatusMessage = () => {
+    // If we have a real-time status message, use it for both processing and failed states
+    if (statusMessage && (isProcessing || isFailed)) {
+      return statusMessage;
+    }
+    
+    // Otherwise fall back to the database status
     switch(item.processing_status) {
       case 'uploading': return 'Uploading & Analyzing';
+      case 'analyzing': return 'Analyzing face';
       case 'searching': return 'Searching for matches';
       case 'generating': return 'Generating profile';
       case 'checking': return 'Checking records';
@@ -51,6 +105,17 @@ const FaceItem = ({ item, onPress, onDelete }) => {
       default: return 'Processing';
     }
   };
+  
+  // Removed toggle expanded function - we no longer show logs
+  
+  // Removed log icon and style helper functions
+  
+  // Update status message when it changes
+  useEffect(() => {
+    if (item.realtimeMessage) {
+      setStatusMessage(item.realtimeMessage);
+    }
+  }, [item.realtimeMessage]);
 
   // Create right swipe action with animated width
   const renderRightActions = (progress) => {
@@ -125,7 +190,9 @@ const FaceItem = ({ item, onPress, onDelete }) => {
           )}
           {isFailed && (
             <View style={styles.processingStatus}>
-              <Text style={[styles.processingText, {color: '#F44336'}]}>Processing failed</Text>
+              <Text style={[styles.processingText, {color: '#F44336'}]}>
+                {statusMessage || 'Processing failed'}
+              </Text>
             </View>
           )}
           {item.deleting && (
@@ -134,6 +201,10 @@ const FaceItem = ({ item, onPress, onDelete }) => {
               <Text style={[styles.processingText, {color: '#F44336'}]}>Deleting...</Text>
             </View>
           )}
+          
+          {/* Removed logs toggle button */}
+          
+          {/* Removed logs section */}
         </View>
       </TouchableOpacity>
     </Swipeable>
@@ -144,6 +215,7 @@ const CollectionScreen = ({ navigation }) => {
   const [faces, setFaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
   const [pagination, setPagination] = useState({
     limit: 20,
     offset: 0,
@@ -206,17 +278,98 @@ const CollectionScreen = ({ navigation }) => {
     }
   };
 
-  // Load initial data when component mounts
+  // Load initial data when component mounts and set up WebSocket connections
   useEffect(() => {
+    console.log('CollectionScreen mounted - loading initial data');
     loadFaces();
     
-    // Set up polling interval for auto-refresh
-    const interval = setInterval(() => {
-      loadFaces(0, false);
-    }, 5000); // Refresh every 5 seconds
+    // Initialize socket connection for real-time updates
+    const socket = initializeSocket();
+    setSocketConnected(socket.connected);
     
-    // Clean up interval on unmount
-    return () => clearInterval(interval);
+    // Set up event listeners for connection status
+    socket.on('connect', () => {
+      console.log('Socket connected in CollectionScreen');
+      setSocketConnected(true);
+    });
+    
+    socket.on('disconnect', () => {
+      console.log('Socket disconnected in CollectionScreen');
+      setSocketConnected(false);
+    });
+    
+    // Directly attach event listener for 'failed' updates
+    // This ensures we catch failure events directly without any middleware
+    socket.on('processing_update', (data) => {
+      console.log('Direct socket event in CollectionScreen:', data);
+      if (data.status === 'failed') {
+        console.log('FAILURE EVENT DETECTED - updating UI directly');
+        // Direct API call to refresh data when a failure happens
+        loadFaces();
+      }
+    });
+    
+    // Subscribe to real-time face processing updates
+    subscribeToProcessingUpdates((data) => {
+      if (!data || !data.face_id) return;
+      
+      console.log('Received real-time update via subscribeToProcessingUpdates:', data);
+      
+      // Special handling for failed status to ensure it gets through
+      if (data.status === 'failed' || data.fromFailureChannel) {
+        console.log('CRITICAL: Failure status received, forcing UI update');
+        
+        // Check if this is from our dedicated failure channel
+        if (data.fromFailureChannel) {
+          console.log('🚨 Received from dedicated failure channel - guaranteed update');
+        }
+        
+        // First update state immediately
+        setFaces(prevFaces => prevFaces.map(face => {
+          if (face.face_id === data.face_id) {
+            return {
+              ...face,
+              processing_status: 'failed',
+              realtimeMessage: data.message || 'Processing failed'
+            };
+          }
+          return face;
+        }));
+        
+        // Then reload faces from server to ensure we get complete latest status
+        setTimeout(() => loadFaces(), 300);
+        return;
+      }
+      
+      // For other statuses, update the local state
+      setFaces(prevFaces => {
+        // Find the face to update
+        const faceToUpdate = prevFaces.find(face => face.face_id === data.face_id);
+        
+        if (!faceToUpdate) {
+          console.log(`Face ${data.face_id} not found in current faces list`);  
+          return prevFaces; // No changes
+        }
+        
+        console.log(`Updating face ${data.face_id} from ${faceToUpdate.processing_status} to ${data.status}`);
+        
+        // Create a new array with all faces, replacing the updated one
+        return prevFaces.map(face => 
+          face.face_id === data.face_id 
+            ? { 
+                ...face, 
+                processing_status: data.status, 
+                realtimeMessage: data.message 
+              } 
+            : face
+        );
+      });
+    });
+    
+    // Clean up on unmount
+    return () => {
+      unsubscribeFromUpdates();
+    };
   }, []);
 
   // Refresh data when screen comes into focus
@@ -291,6 +444,84 @@ const CollectionScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  // Log UI styles
+  logsSection: {
+    padding: 10,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 4,
+    marginTop: 8,
+  },
+  logsList: {
+    maxHeight: 200,
+  },
+  logItem: {
+    flexDirection: 'row',
+    padding: 8,
+    borderRadius: 4,
+    marginBottom: 4,
+  },
+  logIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  logContent: {
+    flex: 1,
+  },
+  logTimestamp: {
+    fontSize: 10,
+    color: '#666',
+    marginBottom: 2,
+  },
+  logMessage: {
+    fontSize: 12,
+    color: '#333',
+  },
+  emptyLogsText: {
+    fontSize: 12,
+    color: '#757575',
+    textAlign: 'center',
+    padding: 10,
+  },
+  logToggleButton: {
+    backgroundColor: '#E0E0E0',
+    padding: 6,
+    borderRadius: 4,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  logToggleText: {
+    fontSize: 12,
+    color: '#333',
+    fontWeight: '500',
+  },
+  // Log type specific styles
+  statusLogItem: {
+    backgroundColor: '#E3F2FD',
+  },
+  infoLogItem: {
+    backgroundColor: '#F5F5F5',
+  },
+  warningLogItem: {
+    backgroundColor: '#FFF3E0',
+  },
+  errorLogItem: {
+    backgroundColor: '#FFEBEE',
+  },
+  successLogItem: {
+    backgroundColor: '#E8F5E9',
+  },
+  stepLogItem: {
+    backgroundColor: '#F5F5F5',
+    borderLeftWidth: 3,
+    borderLeftColor: '#2196F3',
+  },
+  // Special style for OpenAI LLM extraction logs
+  llmExtractionLogItem: {
+    backgroundColor: '#E1F5FE', // Light blue background
+    borderRadius: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: '#0288D1', // Darker blue border
+  },
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
