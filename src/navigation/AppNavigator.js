@@ -1,4 +1,5 @@
 import React from 'react';
+import { Image } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 
@@ -6,6 +7,9 @@ import { createStackNavigator } from '@react-navigation/stack';
 import CollectionScreen from '../screens/CollectionScreen';
 import DetailScreen from '../screens/DetailScreen';
 import UploadScreen from '../screens/UploadScreen';
+
+// Import logo from assets folder
+const headerLogo = require('../assets/logo.png');
 
 // Create stack navigator
 const Stack = createStackNavigator();
@@ -17,7 +21,7 @@ const AppNavigator = () => {
         initialRouteName="Collection"
         screenOptions={{
           headerStyle: {
-            backgroundColor: '#2196F3',
+            backgroundColor: '#000000',
           },
           headerTintColor: '#fff',
           headerTitleStyle: {
@@ -28,7 +32,14 @@ const AppNavigator = () => {
         <Stack.Screen
           name="Collection"
           component={CollectionScreen}
-          options={{ title: 'EyeSpy' }}
+          options={{
+            headerTitle: () => (
+              <Image 
+                source={headerLogo}
+                style={{ width: 120, height: 30, resizeMode: 'contain' }}
+              />
+            )
+          }}
         />
         <Stack.Screen
           name="Detail"

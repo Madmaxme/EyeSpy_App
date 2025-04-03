@@ -161,7 +161,7 @@ const UploadScreen = ({ navigation }) => {
           </>
         ) : (
           <View style={styles.uploadingContainer}>
-            <ActivityIndicator size="large" color="#2196F3" />
+            <ActivityIndicator size="large" color="#000000" />
             <Text style={styles.uploadingText}>Uploading face...</Text>
           </View>
         )}
@@ -224,13 +224,13 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   galleryButton: {
-    backgroundColor: '#2196F3',
+    backgroundColor: '#000000',
   },
   cameraButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#333333',
   },
   uploadButton: {
-    backgroundColor: '#FF9800',
+    backgroundColor: '#666666',
   },
   buttonText: {
     color: 'white',

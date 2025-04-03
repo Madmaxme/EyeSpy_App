@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   retryButton: {
-    backgroundColor: '#2196F3',
+    backgroundColor: '#000000',
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 4,
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   processingBanner: {
-    backgroundColor: '#2196F3',
+    backgroundColor: '#000000',
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
