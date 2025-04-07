@@ -222,15 +222,20 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   galleryButton: {
-    backgroundColor: '#000000',
+    backgroundColor: '#2196F3',  // Blue for gallery selection
   },
   cameraButton: {
-    backgroundColor: '#333333',
+    backgroundColor: '#4CAF50',  // Green for camera action
   },
   uploadButton: {
-    backgroundColor: '#666666',
+    backgroundColor: '#FF5722',  // Orange/red for upload action - stands out as primary action
   },
   buttonText: {
     color: 'white',

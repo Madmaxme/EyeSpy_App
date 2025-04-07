@@ -422,8 +422,9 @@ const CollectionScreen = ({ navigation }) => {
         <View style={styles.instructionContent}>
           <Text style={styles.instructionTitle}>What is EyeSpy?</Text>
           <Text style={styles.instructionText}>
-            EyeSpy is a powerful tool that uses facial recognition technology to find identity matches online,
-            extract information, generate biographical summaries, and search public records for any face you upload.
+            EyeSpy is a powerful tool that uses facial recognition technology to find identity matches online.
+            Our system analyzes faces to extract information, search public records, and generate comprehensive
+            biographical summaries for any face you upload.
           </Text>
         </View>
       </View>
