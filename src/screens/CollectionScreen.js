@@ -11,6 +11,7 @@ import {
   Animated,
   ScrollView
 } from 'react-native';
+import { AntDesign, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Image } from 'react-native';
 import { getFaces, deleteFace } from '../api/eyespyAPI';
 import { base64ToUri, formatTimestamp } from '../utils/imageUtils';
@@ -216,6 +217,7 @@ const CollectionScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
   const [pagination, setPagination] = useState({
     limit: 20,
     offset: 0,
@@ -400,9 +402,71 @@ const CollectionScreen = ({ navigation }) => {
   // Empty footer - no loading indicator
   const renderFooter = () => null;
 
+
+
+  // Instructions panel component
+  const InstructionsPanel = () => (
+    <View style={styles.instructionsContainer}>
+      <View style={styles.instructionsHeader}>
+        <Text style={styles.instructionsTitle}>Welcome to EyeSpy</Text>
+        <TouchableOpacity style={styles.closeButton} onPress={() => setShowInstructions(false)}>
+          <AntDesign name="close" size={24} color="#333" />
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.instructionsSubtitle}>The facial recognition and identity search platform</Text>
+      
+      <View style={styles.instructionSection}>
+        <View style={styles.instructionIcon}>
+          <MaterialIcons name="face" size={24} color="#2196F3" />
+        </View>
+        <View style={styles.instructionContent}>
+          <Text style={styles.instructionTitle}>What is EyeSpy?</Text>
+          <Text style={styles.instructionText}>
+            EyeSpy is a powerful tool that uses facial recognition technology to find identity matches online,
+            extract information, generate biographical summaries, and search public records for any face you upload.
+          </Text>
+        </View>
+      </View>
+      
+      <View style={styles.instructionSection}>
+        <View style={styles.instructionIcon}>
+          <MaterialIcons name="security" size={24} color="#4CAF50" />
+        </View>
+        <View style={styles.instructionContent}>
+          <Text style={styles.instructionTitle}>How it Works</Text>
+          <Text style={styles.instructionText}>
+            When you upload a face image, our system analyzes it using advanced AI to search for matching identities
+            across the web. We then compile information from various sources to create a comprehensive profile.
+          </Text>
+        </View>
+      </View>
+      
+      <View style={styles.howToUseContainer}>
+        <Text style={styles.howToUseTitle}>How to Use EyeSpy:</Text>
+        <Text style={styles.howToUseStep}>1. Tap the + button to upload a face image</Text>
+        <Text style={styles.howToUseStep}>2. Select a photo or take a new one</Text>
+        <Text style={styles.howToUseStep}>3. Wait for processing (may take several minutes)</Text>
+        <Text style={styles.howToUseStep}>4. Tap on a processed face to see detailed results</Text>
+      </View>
+    </View>
+  );
+  
   return (
     <View style={styles.container}>
-      {/* Removed the top-right spinner for a cleaner UI */}
+      {/* Toggle button for instructions */}
+      {!showInstructions && (
+        <TouchableOpacity 
+          style={styles.instructionsButton}
+          onPress={() => setShowInstructions(true)}
+        >
+          <Ionicons name="information-circle" size={20} color="white" />
+          <Text style={styles.instructionsButtonText}>How EyeSpy Works</Text>
+        </TouchableOpacity>
+      )}
+      
+      {/* Instructions panel - always render but conditionally animate and display */}
+      {showInstructions && <InstructionsPanel />}
+      
       <FlatList
         data={faces}
         renderItem={({ item }) => (
@@ -444,6 +508,93 @@ const CollectionScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
+  // Instructions styles
+  instructionsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2196F3',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginHorizontal: 10,
+    marginVertical: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
+    elevation: 2,
+  },
+  instructionsButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  instructionsContainer: {
+    backgroundColor: 'white',
+    margin: 10,
+    borderRadius: 8,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  instructionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  instructionsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  instructionsSubtitle: {
+    fontSize: 14,
+    color: '#757575',
+    marginBottom: 16,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  instructionSection: {
+    flexDirection: 'row',
+    marginBottom: 14,
+  },
+  instructionIcon: {
+    marginTop: 2,
+    marginRight: 10,
+  },
+  instructionContent: {
+    flex: 1,
+  },
+  instructionTitle: {
+    fontWeight: '600',
+    fontSize: 15,
+    marginBottom: 2,
+  },
+  instructionText: {
+    fontSize: 14,
+    color: '#444',
+    lineHeight: 19,
+  },
+  howToUseContainer: {
+    backgroundColor: '#F5F5F5',
+    padding: 12,
+    borderRadius: 6,
+    marginTop: 8,
+  },
+  howToUseTitle: {
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  howToUseStep: {
+    fontSize: 14,
+    marginBottom: 4,
+    color: '#444',
+  },
   // Log UI styles
   logsSection: {
     padding: 10,
