@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Define the base URL for the EyeSpy API
 // Replace with your actual server URL when deploying
-const API_BASE_URL = 'http://localhost:8080/api';  //localhost - 'http://127.0.0.1:8080/api'; 
+const API_BASE_URL = 'http://18.217.189.106:8080/api';  //localhost - 'http://127.0.0.1:8080/api'; 
 //production - 'http://35.180.226.30:8080/api'
 
 // Create an axios instance with default config
@@ -53,8 +53,13 @@ export const getFaceResults = async (faceId) => {
       data.profile = { full_name: 'Unknown', bio_text: null };
     }
     
+    // Properly handle matches
     if (!data.top_matches) {
       data.top_matches = [];
+    } else {
+      // Filter out any empty or invalid matches
+      data.top_matches = data.top_matches.filter(match => 
+        match && match.url && match.thumbnail_base64);
     }
     
     return data;

@@ -39,6 +39,17 @@ const DetailScreen = ({ route, navigation }) => {
   useEffect(() => {
     loadFaceDetails();
   }, [faceId]);
+  
+  // Debug log face data
+  useEffect(() => {
+    if (faceData) {
+      console.log("Face data loaded:", {
+        hasMatches: faceData.top_matches && faceData.top_matches.length > 0,
+        matchesCount: faceData.top_matches ? faceData.top_matches.length : 0,
+        profile: faceData.profile
+      });
+    }
+  }, [faceData]);
 
   // Function to handle deleting a face
   const handleDeleteFace = () => {
@@ -114,9 +125,29 @@ const DetailScreen = ({ route, navigation }) => {
 
 
 
+  // Check if this face has no matches (truly unknown identity)
+  const isUnknownIdentity = (!faceData.profile?.full_name || 
+                           faceData.profile?.full_name === 'Unknown' || 
+                           faceData.profile?.full_name === 'Unknown Person') && 
+                          (!faceData.top_matches || faceData.top_matches.length === 0);
+
   return (
     <ScrollView style={styles.container}>
 
+      {/* Unknown Identity Banner - shown at the top when no identity is found */}
+      {isUnknownIdentity && (
+        <View style={styles.unknownIdentityContainer}>
+          <View style={styles.unknownIdentityBadge}>
+            <Text style={styles.unknownIdentityText}>IDENTITY NOT FOUND</Text>
+          </View>
+          <Text style={styles.unknownIdentityDescription}>
+            We couldn't find this person's identity on the internet.
+          </Text>
+          <Text style={styles.unknownIdentitySubtext}>
+            Our search of public internet sources did not return any matches for this face.
+          </Text>
+        </View>
+      )}
 
       {/* Original face image */}
       <View style={styles.imageSection}>
@@ -156,9 +187,11 @@ const DetailScreen = ({ route, navigation }) => {
       )}
 
       {/* Top matches section */}
-      <View style={styles.matchesSection}>
-        <Text style={styles.sectionTitle}>Top Matches</Text>
-        {faceData.top_matches && faceData.top_matches.length > 0 ? (
+      {/* Only show the Top Matches section if there are actually matches */}
+      {(!isUnknownIdentity) && (
+        <View style={styles.matchesSection}>
+          <Text style={styles.sectionTitle}>Top Matches</Text>
+          {faceData.top_matches && faceData.top_matches.length > 0 ? (
           faceData.top_matches.map((match, index) => (
             <TouchableOpacity 
               key={index} 
@@ -182,11 +215,12 @@ const DetailScreen = ({ route, navigation }) => {
         ) : (
           <View style={styles.noMatchesContainer}>
             <Text style={styles.noMatchesText}>
-              No matches found for this face.
+              No matching faces were found in our databases.
             </Text>
           </View>
         )}
       </View>
+      )}
 
 
 
@@ -347,16 +381,63 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  noMatchesContainer: {
-    padding: 20,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
+  unknownIdentityContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFEBEE',
+    borderRadius: 8,
+    marginHorizontal: 15,
+    marginTop: 15,
+    marginBottom: 15,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#FFCDD2', 
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.5,
+  },
+  noMatchesContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 4,
+    marginVertical: 10,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
   },
   noMatchesText: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#757575',
     textAlign: 'center',
+  },
+  unknownIdentityBadge: {
+    backgroundColor: '#F44336',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 4,
+    marginBottom: 10,
+  },
+  unknownIdentityText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+    letterSpacing: 0.5,
+  },
+  unknownIdentityDescription: {
+    fontSize: 15,
+    color: '#D32F2F',
+    textAlign: 'center',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  unknownIdentitySubtext: {
+    fontSize: 13,
+    color: '#757575',
+    textAlign: 'center',
+    lineHeight: 18,
   },
   deleteButton: {
     margin: 15,
