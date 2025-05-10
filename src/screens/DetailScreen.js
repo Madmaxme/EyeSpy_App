@@ -65,8 +65,22 @@ const DetailScreen = ({ route, navigation }) => {
             try {
               setLoading(true);
               await deleteFace(faceId);
-              Alert.alert('Success', 'Face deleted successfully');
-              navigation.goBack();
+              // Show success alert and only navigate back after user confirms
+              Alert.alert(
+                'Success', 
+                'Face deleted successfully',
+                [
+                  { 
+                    text: 'OK', 
+                    onPress: () => {
+                      // Set refresh parameter for the previous (Collection) screen
+                      navigation.setParams({ refresh: true, deleted: true, timestamp: Date.now() });
+                      // Go back to the Collection screen
+                      navigation.goBack();
+                    }
+                  }
+                ]
+              );
             } catch (err) {
               console.error('Error deleting face:', err);
               Alert.alert('Error', 'Failed to delete face. Please try again.');

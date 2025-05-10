@@ -214,10 +214,15 @@ const FaceItem = ({ item, onPress, onDelete }) => {
   );
 };
 
+// Constants
+const FACES_BATCH_SIZE = 10; // Number of faces to load per batch
+
 const CollectionScreen = ({ navigation }) => {
+  // State for managing the list of faces
   const [faces, setFaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   // Reduce initial page size for faster first load
@@ -240,7 +245,7 @@ const CollectionScreen = ({ navigation }) => {
       }
       
       // Check cache first to avoid unnecessary API calls
-      const cacheKey = `faces_${pagination.limit}_${offset}`;
+      const cacheKey = `faces_${FACES_BATCH_SIZE}_${offset}`;
       const cachedResult = facesCache.current[cacheKey];
       const cacheExpiry = 60000; // 1 minute cache expiry
       const now = Date.now();
@@ -252,7 +257,7 @@ const CollectionScreen = ({ navigation }) => {
       } else {
         // Cache miss or expired, fetch from API
         console.log('Fetching face list from API');
-        result = await getFaces(pagination.limit, offset);
+        result = await getFaces(FACES_BATCH_SIZE, offset);
         
         // Update cache
         facesCache.current[cacheKey] = {
@@ -261,13 +266,34 @@ const CollectionScreen = ({ navigation }) => {
         };
       }
       
-      // Update state with new data
-      setFaces(prev => append ? [...prev, ...result.faces] : result.faces);
+      // Create a map of faces to ensure uniqueness by face_id
+      setFaces(prevFaces => {
+        // Use a map to deduplicate faces by face_id
+        const faceMap = new Map();
+        
+        // If appending, add existing faces to map first
+        if (append) {
+          prevFaces.forEach(face => {
+            faceMap.set(face.face_id, face);
+          });
+        }
+        
+        // Add new faces, overwriting any duplicates
+        result.faces.forEach(face => {
+          faceMap.set(face.face_id, face);
+        });
+        
+        // Convert map values back to array and sort by timestamp (newest first)
+        return Array.from(faceMap.values()).sort((a, b) => {
+          return b.timestamp - a.timestamp;
+        });
+      });
+      
+      // Update pagination state
       setPagination({
-        ...pagination,
         offset: offset + result.faces.length,
         totalFaces: result.total_faces,
-        hasMore: result.faces.length >= pagination.limit
+        hasMore: result.faces.length >= FACES_BATCH_SIZE
       });
     } catch (error) {
       console.error('Error loading faces:', error);
@@ -423,9 +449,77 @@ const CollectionScreen = ({ navigation }) => {
   // Refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      loadFaces(0, false);
+      console.log('Collection screen focused');
+      // Force a refresh of the face list
+      facesCache.current = {}; // Clear cache
+      loadFaces(0, false);      
     }, [])
   );
+  
+  // Listen for navigation params to refresh after upload or deletion
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      // Check if we're returning from an upload or deletion
+      const refreshParam = navigation.getParam?.('refresh') || navigation.getState?.().routes.find(r => r.name === 'Collection')?.params?.refresh;
+      
+      if (refreshParam) {
+        console.log('Performing background refresh');
+        // Perform a subtle background refresh
+        backgroundRefresh();
+      }
+    });
+    
+    return unsubscribe;
+  }, [navigation]);
+  
+  // Special background refresh function that doesn't show loading indicators
+  const backgroundRefresh = async () => {
+    try {
+      // Don't set loading state - keep the current UI
+      facesCache.current = {}; // Clear cache
+      
+      // Fetch fresh data
+      const result = await getFaces(FACES_BATCH_SIZE, 0);
+      
+      // Update the cache
+      facesCache.current[`faces_${FACES_BATCH_SIZE}_0`] = {
+        data: result,
+        timestamp: Date.now()
+      };
+      
+      // Update faces with Map-based deduplication to prevent flashing
+      setFaces(prevFaces => {
+        // Create map of current faces
+        const faceMap = new Map();
+        
+        // Add new faces first (they take priority)
+        result.faces.forEach(face => {
+          faceMap.set(face.face_id, face);
+        });
+        
+        // Add any existing faces not in the new data
+        prevFaces.forEach(face => {
+          if (!faceMap.has(face.face_id)) {
+            faceMap.set(face.face_id, face);
+          }
+        });
+        
+        // Convert to sorted array
+        return Array.from(faceMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+      });
+      
+      // Update pagination without triggering loading indicators
+      setPagination(prev => ({
+        ...prev,
+        offset: result.faces.length,
+        totalFaces: result.total_faces,
+        hasMore: result.faces.length >= FACES_BATCH_SIZE
+      }));
+    } catch (error) {
+      console.error('Background refresh error:', error);
+      // Don't show error UI for background refresh
+    }
+  };
 
   // Handler for refreshing the list (pull-to-refresh)
   const handleRefresh = () => {

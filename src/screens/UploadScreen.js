@@ -94,13 +94,22 @@ const UploadScreen = ({ navigation }) => {
       const result = await uploadFace(selectedImage.uri);
       
       if (result.status === 'success') {
-        // Show brief toast/alert then navigate back
-        Alert.alert('Success', 'Face uploaded successfully');
-        
-        // Short timeout to allow user to see the alert before navigating
-        setTimeout(() => {
-          navigation.goBack(); // Go back to the Collection screen
-        }, 1000);
+        // Show success alert and only navigate back after user confirms
+        Alert.alert(
+          'Success', 
+          'Face uploaded successfully',
+          [
+            { 
+              text: 'OK', 
+              onPress: () => {
+                // Set params for the previous screen (Collection) to trigger refresh
+                navigation.setParams({ refresh: true, timestamp: Date.now() });
+                // Go back to the previous screen
+                navigation.goBack();
+              }
+            }
+          ]
+        );
       } else {
         throw new Error('Upload failed: ' + (result.message || 'Unknown error'));
       }
