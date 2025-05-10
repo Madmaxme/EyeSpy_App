@@ -27,13 +27,15 @@
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
+          <string>eyespy</string>
+          <string>eyespy</string>
           <string>com.eyespy.app</string>
         </array>
       </dict>
       <dict>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>exp+eyespy</string>
+          <string>exp+eyespyapp</string>
         </array>
       </dict>
     </array>

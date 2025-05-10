@@ -137,6 +137,8 @@ const FaceItem = ({ item, onPress, onDelete }) => {
           <TouchableOpacity
             style={styles.deleteActionButton}
             onPress={() => {
+              if (item.deleting) return; // Prevent multiple delete attempts
+              
               // Confirm deletion
               Alert.alert(
                 "Delete Face",
@@ -218,18 +220,46 @@ const CollectionScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
+  // Reduce initial page size for faster first load
   const [pagination, setPagination] = useState({
-    limit: 20,
+    limit: 10,  // Reduced from 20 to 10 for faster initial load
     offset: 0,
     totalFaces: 0,
     hasMore: true
   });
+  
+  // Cache for face list to avoid unnecessary rerenders
+  const facesCache = useRef({});
 
-  // Function to load faces from the API
+  // Function to load faces from the API with optimized caching
   const loadFaces = async (offset = 0, append = false) => {
     try {
-      // Don't set loading state - keep it invisible
-      const result = await getFaces(pagination.limit, offset);
+      // Set loading state for better UX feedback
+      if (!append) {
+        setLoading(true);
+      }
+      
+      // Check cache first to avoid unnecessary API calls
+      const cacheKey = `faces_${pagination.limit}_${offset}`;
+      const cachedResult = facesCache.current[cacheKey];
+      const cacheExpiry = 60000; // 1 minute cache expiry
+      const now = Date.now();
+      
+      let result;
+      if (cachedResult && (now - cachedResult.timestamp < cacheExpiry)) {
+        console.log('Using cached face list data');
+        result = cachedResult.data;
+      } else {
+        // Cache miss or expired, fetch from API
+        console.log('Fetching face list from API');
+        result = await getFaces(pagination.limit, offset);
+        
+        // Update cache
+        facesCache.current[cacheKey] = {
+          data: result,
+          timestamp: now
+        };
+      }
       
       // Update state with new data
       setFaces(prev => append ? [...prev, ...result.faces] : result.faces);
@@ -242,6 +272,9 @@ const CollectionScreen = ({ navigation }) => {
     } catch (error) {
       console.error('Error loading faces:', error);
       // No alert - keep errors invisible
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -283,7 +316,11 @@ const CollectionScreen = ({ navigation }) => {
   // Load initial data when component mounts and set up WebSocket connections
   useEffect(() => {
     console.log('CollectionScreen mounted - loading initial data');
-    loadFaces();
+    
+    // Load faces with a small delay to allow the UI to render first
+    const loadTimer = setTimeout(() => {
+      loadFaces();
+    }, 100);
     
     // Initialize socket connection for real-time updates
     const socket = initializeSocket();
@@ -300,14 +337,21 @@ const CollectionScreen = ({ navigation }) => {
       setSocketConnected(false);
     });
     
+    // Use a debounced approach for socket updates to prevent excessive calls
+    let updateTimeout = null;
+    const scheduleUpdate = () => {
+      if (updateTimeout) clearTimeout(updateTimeout);
+      updateTimeout = setTimeout(() => loadFaces(), 1000);
+    };
+    
     // Directly attach event listener for 'failed' updates
     // This ensures we catch failure events directly without any middleware
     socket.on('processing_update', (data) => {
       console.log('Direct socket event in CollectionScreen:', data);
       if (data.status === 'failed') {
         console.log('FAILURE EVENT DETECTED - updating UI directly');
-        // Direct API call to refresh data when a failure happens
-        loadFaces();
+        // Instead of immediate reload, use our debounced approach
+        scheduleUpdate();
       }
     });
     
@@ -338,8 +382,8 @@ const CollectionScreen = ({ navigation }) => {
           return face;
         }));
         
-        // Then reload faces from server to ensure we get complete latest status
-        setTimeout(() => loadFaces(), 300);
+        // Use debounced approach for reload
+        scheduleUpdate();
         return;
       }
       
@@ -370,6 +414,8 @@ const CollectionScreen = ({ navigation }) => {
     
     // Clean up on unmount
     return () => {
+      clearTimeout(loadTimer);
+      if (updateTimeout) clearTimeout(updateTimeout);
       unsubscribeFromUpdates();
     };
   }, []);
@@ -383,13 +429,16 @@ const CollectionScreen = ({ navigation }) => {
 
   // Handler for refreshing the list (pull-to-refresh)
   const handleRefresh = () => {
-    // Don't show refreshing state
+    // Clear the cache to force a fresh load
+    facesCache.current = {};
+    setRefreshing(true);
     loadFaces(0, false);
   };
 
   // Handler for loading more items when reaching the end of the list
   const handleLoadMore = () => {
     if (!loading && pagination.hasMore) {
+      // Show a small activity indicator at the bottom only when loading more
       loadFaces(pagination.offset, true);
     }
   };
@@ -398,6 +447,28 @@ const CollectionScreen = ({ navigation }) => {
   const handleFacePress = (face) => {
     navigation.navigate('Detail', { faceId: face.face_id });
   };
+  
+  // Loading state component shown during initial loading
+  const LoadingState = () => (
+    <View style={styles.loadingState}>
+      <ActivityIndicator size="large" color="#2196F3" />
+      <Text style={styles.loadingText}>Loading faces...</Text>
+    </View>
+  );
+  
+  // Empty state component shown when no faces are found
+  const EmptyState = () => (
+    <View style={styles.emptyState}>
+      <MaterialIcons name="search-off" size={64} color="#757575" />
+      <Text style={styles.emptyStateText}>No faces found</Text>
+      <TouchableOpacity 
+        style={styles.emptyStateButton}
+        onPress={() => navigation.navigate('Upload')}
+      >
+        <Text style={styles.emptyStateButtonText}>Upload a Face</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   // Empty footer - no loading indicator
   const renderFooter = () => null;
@@ -470,32 +541,31 @@ const CollectionScreen = ({ navigation }) => {
       
       <FlatList
         data={faces}
+        keyExtractor={(item) => item.face_id}
         renderItem={({ item }) => (
-          <FaceItem 
-            item={item} 
+          <FaceItem
+            item={item}
             onPress={handleFacePress}
             onDelete={handleDeleteFace}
           />
         )}
-        keyExtractor={item => item.face_id}
-        contentContainerStyle={styles.listContent}
+        initialNumToRender={5} 
+        maxToRenderPerBatch={5} 
+        windowSize={5} 
+        removeClippedSubviews={true} 
+        ListEmptyComponent={!loading && faces.length === 0 ? EmptyState : null}
+        ListFooterComponent={pagination.hasMore && !loading ? null : (
+          <ActivityIndicator style={{margin: 20}} color="#2196F3" />
+        )}
         refreshControl={
           <RefreshControl
-            refreshing={false}
+            refreshing={refreshing}
             onRefresh={handleRefresh}
-            colors={['#2196F3']}
           />
         }
         onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={renderFooter}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>
-              No faces found. Upload a face to get started.
-            </Text>
-          </View>
-        }
+        onEndReachedThreshold={0.5} 
+        contentContainerStyle={styles.flatListContent}
       />
       
       <TouchableOpacity 
@@ -508,7 +578,52 @@ const CollectionScreen = ({ navigation }) => {
   );
 };
 
+// Optimize image rendering with default props
+Image.defaultProps = {
+  ...Image.defaultProps,
+  fadeDuration: 200,     
+  progressiveRenderingEnabled: true, 
+};
+
 const styles = StyleSheet.create({
+  // Loading state styles
+  loadingState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#555',
+  },
+  
+  // Empty state styles
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    marginTop: 50,
+  },
+  emptyStateText: {
+    marginTop: 10,
+    fontSize: 18,
+    color: '#555',
+    marginBottom: 20,
+  },
+  emptyStateButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 5,
+  },
+  emptyStateButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '500',
+  },
   // Instructions styles
   instructionsButton: {
     flexDirection: 'row',
@@ -678,7 +793,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F5F5',
   },
-  listContent: {
+  flatListContent: {
     padding: 10,
   },
   faceItem: {
@@ -707,10 +822,11 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   faceThumbnail: {
-    width: 80,
-    height: 80,
-    borderRadius: 4,
+    width: 60,
+    height: 60,
+    borderRadius: 6,
     backgroundColor: '#E0E0E0',
+    resizeMethod: 'resize',
   },
   processingImage: {
     opacity: 0.8,
