@@ -235,6 +235,13 @@ const CollectionScreen = ({ navigation }) => {
   
   // Cache for face list to avoid unnecessary rerenders
   const facesCache = useRef({});
+  
+  // Track faces that have reached a terminal status (complete or failed)
+  // This prevents them from flickering back to previous states
+  const lockedFaces = useRef({});
+  
+  // Ref to track the update timeout between renders
+  const updateTimeoutRef = useRef(null);
 
   // Function to load faces from the API with optimized caching
   const loadFaces = async (offset = 0, append = false) => {
@@ -243,6 +250,9 @@ const CollectionScreen = ({ navigation }) => {
       if (!append) {
         setLoading(true);
       }
+      
+      // Get a local copy of the locked faces for reference during this load
+      const lockedFaceData = lockedFaces.current;
       
       // Check cache first to avoid unnecessary API calls
       const cacheKey = `faces_${FACES_BATCH_SIZE}_${offset}`;
@@ -339,6 +349,17 @@ const CollectionScreen = ({ navigation }) => {
     }
   };
 
+  // Helper function to schedule a delayed refresh
+  const scheduleUpdate = (delay = 1000) => {
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+    updateTimeoutRef.current = setTimeout(() => {
+      loadFaces();
+      updateTimeoutRef.current = null;
+    }, delay);
+  };
+  
   // Load initial data when component mounts and set up WebSocket connections
   useEffect(() => {
     console.log('CollectionScreen mounted - loading initial data');
@@ -363,22 +384,54 @@ const CollectionScreen = ({ navigation }) => {
       setSocketConnected(false);
     });
     
-    // Use a debounced approach for socket updates to prevent excessive calls
-    let updateTimeout = null;
-    const scheduleUpdate = () => {
-      if (updateTimeout) clearTimeout(updateTimeout);
-      updateTimeout = setTimeout(() => loadFaces(), 1000);
+    // Apply immediate updates directly to the UI without doing a full reload
+    const updateFaceDirectly = (faceId, status, message) => {
+      console.log(`Direct UI update for face ${faceId}: ${status} - ${message || 'No message'}`);      
+
+      // If this is a terminal status (complete or failed), lock this face
+      if (status === 'complete' || status === 'failed') {
+        console.log(`🔒 Locking face ${faceId} to status: ${status}`);
+        lockedFaces.current[faceId] = {
+          status,
+          message,
+          timestamp: Date.now()
+        };
+        
+        // Schedule a delayed background refresh to ensure API data is in sync
+        scheduleUpdate(2000);
+      }
+      
+      // Update the UI immediately with this new status
+      setFaces(prevFaces => {
+        const updatedFaces = prevFaces.map(face => {
+          if (face.face_id === faceId) {
+            return {
+              ...face,
+              processing_status: status,
+              realtimeMessage: message || face.realtimeMessage
+            };
+          }
+          return face;
+        });
+        
+        return updatedFaces;
+      });
     };
     
-    // Directly attach event listener for 'failed' updates
-    // This ensures we catch failure events directly without any middleware
+    // Handle socket processing updates directly
     socket.on('processing_update', (data) => {
-      console.log('Direct socket event in CollectionScreen:', data);
-      if (data.status === 'failed') {
-        console.log('FAILURE EVENT DETECTED - updating UI directly');
-        // Instead of immediate reload, use our debounced approach
-        scheduleUpdate();
-      }
+      if (!data || !data.face_id || !data.status) return;
+      
+      console.log(`Socket processing_update for ${data.face_id}: ${data.status}`);
+      updateFaceDirectly(data.face_id, data.status, data.message);
+    });
+    
+    // Handle dedicated failure channel
+    socket.on('processing_failed', (data) => {
+      if (!data || !data.face_id) return;
+      
+      console.log(`🚨 CRITICAL: Failure event for ${data.face_id}`);
+      updateFaceDirectly(data.face_id, 'failed', data.message || 'Processing failed');
     });
     
     // Subscribe to real-time face processing updates
@@ -387,61 +440,22 @@ const CollectionScreen = ({ navigation }) => {
       
       console.log('Received real-time update via subscribeToProcessingUpdates:', data);
       
-      // Special handling for failed status to ensure it gets through
-      if (data.status === 'failed' || data.fromFailureChannel) {
-        console.log('CRITICAL: Failure status received, forcing UI update');
-        
-        // Check if this is from our dedicated failure channel
+      // Forward to our central update function
+      if (data && data.face_id && data.status) {
+        // Mark special failure channel messages
         if (data.fromFailureChannel) {
           console.log('🚨 Received from dedicated failure channel - guaranteed update');
         }
         
-        // First update state immediately
-        setFaces(prevFaces => prevFaces.map(face => {
-          if (face.face_id === data.face_id) {
-            return {
-              ...face,
-              processing_status: 'failed',
-              realtimeMessage: data.message || 'Processing failed'
-            };
-          }
-          return face;
-        }));
-        
-        // Use debounced approach for reload
-        scheduleUpdate();
-        return;
+        // Use the updateFaceDirectly function to keep our update logic centralized
+        updateFaceDirectly(data.face_id, data.status, data.message);
       }
-      
-      // For other statuses, update the local state
-      setFaces(prevFaces => {
-        // Find the face to update
-        const faceToUpdate = prevFaces.find(face => face.face_id === data.face_id);
-        
-        if (!faceToUpdate) {
-          console.log(`Face ${data.face_id} not found in current faces list`);  
-          return prevFaces; // No changes
-        }
-        
-        console.log(`Updating face ${data.face_id} from ${faceToUpdate.processing_status} to ${data.status}`);
-        
-        // Create a new array with all faces, replacing the updated one
-        return prevFaces.map(face => 
-          face.face_id === data.face_id 
-            ? { 
-                ...face, 
-                processing_status: data.status, 
-                realtimeMessage: data.message 
-              } 
-            : face
-        );
-      });
     });
     
     // Clean up on unmount
     return () => {
       clearTimeout(loadTimer);
-      if (updateTimeout) clearTimeout(updateTimeout);
+      if (updateTimeoutRef.current) clearTimeout(updateTimeoutRef.current);
       unsubscribeFromUpdates();
     };
   }, []);
@@ -492,14 +506,28 @@ const CollectionScreen = ({ navigation }) => {
         // Create map of current faces
         const faceMap = new Map();
         
-        // Add new faces first (they take priority)
-        result.faces.forEach(face => {
+        // First, add all existing faces to preserve current state
+        prevFaces.forEach(face => {
           faceMap.set(face.face_id, face);
         });
         
-        // Add any existing faces not in the new data
-        prevFaces.forEach(face => {
-          if (!faceMap.has(face.face_id)) {
+        // Then process new faces, but respect locked faces from real-time updates
+        result.faces.forEach(face => {
+          const existingFace = faceMap.get(face.face_id);
+          const lockedFace = lockedFaceData[face.face_id];
+          
+          if (lockedFace) {
+            // If this face is locked (has reached terminal status), use the locked data
+            faceMap.set(face.face_id, {
+              ...face,
+              processing_status: lockedFace.status,
+              realtimeMessage: lockedFace.message || face.realtimeMessage
+            });
+            console.log(`Maintaining locked status ${lockedFace.status} for ${face.face_id} during API refresh`);
+          } else if (!existingFace || 
+                    (existingFace.processing_status !== 'complete' && 
+                     existingFace.processing_status !== 'failed')) {
+            // Only update from API if not already in a terminal state locally
             faceMap.set(face.face_id, face);
           }
         });
